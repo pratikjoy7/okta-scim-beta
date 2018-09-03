@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2016-2017, Okta, Inc.
-# 
+#
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
 # "Software"), to deal in the Software without restriction, including
@@ -10,10 +10,10 @@
 # distribute, sublicense, and/or sell copies of the Software, and to
 # permit persons to whom the Software is furnished to do so, subject to
 # the following conditions:
-# 
+#
 # The above copyright notice and this permission notice shall be
 # included in all copies or substantial portions of the Software.
-# 
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
 # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
@@ -24,13 +24,13 @@
 import os
 import re
 import uuid
+import json
 
 from flask import Flask
 from flask import render_template
 from flask import request
 from flask import url_for
-from flask_socketio import SocketIO
-from flask_socketio import emit
+from flask import jsonify
 from flask_sqlalchemy import SQLAlchemy
 import flask
 
@@ -40,7 +40,6 @@ database_url = os.getenv('DATABASE_URL', 'sqlite:///test-users.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 db = SQLAlchemy(app)
-socketio = SocketIO(app)
 
 
 class ListResponse():
@@ -121,33 +120,23 @@ def scim_error(message, status_code=500):
     return flask.jsonify(rv), status_code
 
 
-def send_to_browser(obj):
-    socketio.emit('user',
-                  {'data': obj},
-                  broadcast=True,
-                  namespace='/test')
-
-
 def render_json(obj):
     rv = obj.to_scim_resource()
-    send_to_browser(rv)
     return flask.jsonify(rv)
-
-
-@socketio.on('connect', namespace='/test')
-def test_connect():
-    for user in User.query.filter_by(active=True).all():
-        emit('user', {'data': user.to_scim_resource()})
-
-
-@socketio.on('disconnect', namespace='/test')
-def test_disconnect():
-    print('Client disconnected')
 
 
 @app.route('/')
 def hello():
-    return render_template('base.html')
+    return 'Hello World!'
+
+
+@app.route('/_status', methods=['GET'])
+def status(status_message='OK', status_code=200):
+    status_dict = {
+        'status': status_message,
+    }
+
+    return jsonify(status_dict), status_code
 
 
 @app.route("/scim/v2/Users/<user_id>", methods=['GET'])
@@ -167,7 +156,6 @@ def users_post():
     db.session.add(user)
     db.session.commit()
     rv = user.to_scim_resource()
-    send_to_browser(rv)
     resp = flask.jsonify(rv)
     resp.headers['Location'] = url_for('user_get',
                                        user_id=user.userName,
@@ -188,6 +176,7 @@ def users_put(user_id):
 @app.route("/scim/v2/Users/<user_id>", methods=['PATCH'])
 def users_patch(user_id):
     patch_resource = request.get_json(force=True)
+    print(json.dumps(patch_resource))
     for attribute in ['schemas', 'Operations']:
         if attribute not in patch_resource:
             message = "Payload must contain '{}' attribute.".format(attribute)
@@ -239,6 +228,14 @@ def groups_get():
     return flask.jsonify(rv.to_scim_resource())
 
 
+@app.route("/scim/v2/Groups", methods=['POST'])
+def groups():
+    group_resource = request.get_json(force=True)
+    print(json.dumps(group_resource))
+
+    return 201
+
+
 @app.route("/db", methods=['POST'])
 def create_db():
     db.create_all()
@@ -250,5 +247,5 @@ if __name__ == "__main__":
         User.query.one()
     except:
         db.create_all()
-    # app.debug = True
-    socketio.run(app)
+    app.debug = True
+    app.run(host='0.0.0.0', port=5000)

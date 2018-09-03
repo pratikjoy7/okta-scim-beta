@@ -3,3 +3,5 @@ venv
 *~
 .DS_Store
 .exports
+.idea/*
+test-users.db
