@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import re
 import uuid
 import json
 
@@ -9,17 +10,7 @@ from flask import url_for
 from flask import jsonify
 
 app = Flask(__name__)
-user_resource_file = '/home/pratik.saha/user_resource.json'
-
-
-def to_scim_list_resource(total_results, start_index):
-    rv = {
-        "schemas": ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
-        "totalResults": total_results,
-        "startIndex": start_index,
-        "Resources": []
-    }
-    return rv
+user_resource_file = '/home/pratikjoy7/user_resource.json'
 
 
 def scim_error(message, status_code=500):
@@ -45,6 +36,16 @@ def status(status_message='OK', status_code=200):
     return jsonify(status_dict), status_code
 
 
+@app.route("/scim/v2/Users/<user_id>", methods=['GET'])
+def user_get(user_id):
+    try:
+        user = None
+        # user = User.query.filter_by(id=user_id).one()
+    except:
+        return scim_error("User not found", 404)
+    return render_json(user)
+
+
 @app.route("/scim/Users", methods=['POST'])
 def users_post():
     print(request.__dict__)
@@ -52,8 +53,16 @@ def users_post():
     user_resource = request.get_json(force=True)
     user_resource['id'] = str(uuid.uuid4())
 
-    with open(user_resource_file, 'a+') as fp:
-        json.dump(user_resource, fp)
+    try:
+        with open(user_resource_file) as fp:
+            user_resources = json.load(fp)
+    except ValueError:
+        user_resources = []
+
+    user_resources.append(user_resource)
+
+    with open(user_resource_file, 'w+') as fp:
+        json.dump(user_resources, fp)
 
     resp = flask.jsonify(user_resource)
     resp.headers['Location'] = url_for('user_get',
@@ -97,42 +106,23 @@ def users_post():
 
 @app.route("/scim/Users", methods=['GET'])
 def users_get():
-    # request_filter = request.args.get('filter')
-    # match = None
-    # if request_filter:
-    #     match = re.match('(\w+) eq "([^"]*)"', request_filter)
-    # if match:
-    #     (search_key_name, search_value) = match.groups()
-    #     search_key = getattr(User, search_key_name)
-    #     query = query.filter(search_key == search_value)
     with open(user_resource_file) as fp:
-        user_resource = json.load(fp)
-
-    total_results = None
-    for resource in user_resource['Resources']:
-        total_results = len(resource)
-
-    start_index = int(request.args.get('startIndex', 1))
-    if start_index < 1:
-        start_index = 1
-    start_index -= 1
-    rv = to_scim_list_resource(total_results, start_index)
-    rv['resources'] =
+        resources = json.load(fp)
+    request_filter = request.args.get('filter')
+    match = None
+    print(request_filter)
+    if request_filter:
+        match = re.match('(\w+) eq "([^"]*)"', request_filter)
+    if match:
+        (search_key_name, search_value) = match.groups()
+        for resource in resources:
+            if resource[search_key_name] == search_value:
+                resources = resource
+                break
+            else:
+                return scim_error("User not found", 404)
+    rv = {'schemas': ['urn:ietf:params:scim:api:messages:2.0:ListResponse'], "Resources": resources}
     return flask.jsonify(rv)
-
-
-# @app.route("/scim/Groups", methods=['GET'])
-# def groups_get():
-#     rv = ListResponse([])
-#     return flask.jsonify(rv.to_scim_resource())
-#
-#
-# @app.route("/scim/Groups", methods=['POST'])
-# def groups():
-#     group_resource = request.get_json(force=True)
-#     print(json.dumps(group_resource))
-#
-#     return 201
 
 
 if __name__ == "__main__":
